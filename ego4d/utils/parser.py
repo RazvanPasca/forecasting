@@ -19,10 +19,8 @@ def parse_args():
         cfg (str): path to the config file.
         opts (argument): provide additional options from the command line, it
             overwrites the config loaded from file.
-        """
-    parser = argparse.ArgumentParser(
-        description="Provide SlowFast video training and testing pipeline."
-    )
+    """
+    parser = argparse.ArgumentParser(description="Provide SlowFast video training and testing pipeline.")
     parser.add_argument("--job_name", default="", type=str)
     parser.add_argument("--on_cluster", action="store_true")
     parser.add_argument("--working_directory", default="", type=str)
@@ -33,9 +31,7 @@ def parse_args():
         default=0,
         type=int,
     )
-    parser.add_argument(
-        "--num_shards", help="Number of shards using by the job", default=1, type=int
-    )
+    parser.add_argument("--num_shards", help="Number of shards using by the job", default=1, type=int)
     parser.add_argument(
         "--cfg",
         dest="cfg_file",
@@ -49,6 +45,7 @@ def parse_args():
         default=None,
         nargs=argparse.REMAINDER,
     )
+    parser.add_argument("--gpu", help="specify gpu choice", type=int, default=6)
     if len(sys.argv) == 1:
         parser.print_help()
     return parser.parse_args()

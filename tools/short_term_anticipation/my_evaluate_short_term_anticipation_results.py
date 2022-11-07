@@ -1,7 +1,7 @@
 from argparse import ArgumentParser
 import json
 from tqdm import tqdm
-from Ego4d_all.forecast.ego4d.evaluation.sta_metrics import STAMeanAveragePrecision
+from Ego4d_all.forecast.ego4d.evaluation.sta_metrics import STAMeanAveragePrecision, ObjectOnlyMeanAveragePrecision
 import numpy as np
 
 
@@ -114,60 +114,78 @@ def validate_results(results, annotations):
         raise MissingUidException(missing_uids)
 
 
-parser = ArgumentParser()
-parser.add_argument(
-    "--path_to_results_json",
-    default="/local/home/rpasca/Thesis/Ego4d_all/forecast/short_term_anticipation/results/short_term_anticipation_results_val.json",
-    # default="/local/home/rpasca/Thesis/Ego4d_all/forecast/short_term_anticipation/results/prod_obj_det_valfs.json",
-)
-parser.add_argument(
-    "--path_to_annotations_json", default="/data/rpasca/Datasets/Ego4d/data/annotations/fho_sta_val.json"
-)
+if __name__ == "__main__":
 
-args = parser.parse_args()
+    parser = ArgumentParser()
+    parser.add_argument(
+        "--path_to_results_json",
+        default="/local/home/rpasca/Thesis/Ego4d_all/forecast/short_term_anticipation/results/short_term_anticipation_results_val.json",
+    )
+    parser.add_argument(
+        "--path_to_annotations_json", default="/data/rpasca/Datasets/Ego4d/data/annotations/fho_sta_val.json"
+    )
+    # try:
+    args = parser.parse_args()
 
-with open(args.path_to_results_json, "r") as f:
-    results = json.load(f)
+    with open(args.path_to_results_json, "r") as f:
+        results = json.load(f)
 
-with open(args.path_to_annotations_json, "r") as f:
-    annotations = json.load(f)
+    with open(args.path_to_annotations_json, "r") as f:
+        annotations = json.load(f)
 
-validate_results(results, annotations)
+    # validate_results(results, annotations)
 
-map = STAMeanAveragePrecision(top_k=5)
-c = 0
-for ann in tqdm(annotations["annotations"]):
-    uid = ann["uid"]
+    map = STAMeanAveragePrecision(top_k=5)
+    # map = ObjectOnlyMeanAveragePrecision(top_k=5)
+    c = 0
+    for ann in tqdm(annotations["annotations"]):
+        uid = ann["uid"]
 
-    gt = {
-        "boxes": np.vstack([x["box"] for x in ann["objects"]]),
-        "nouns": np.array([x["noun_category_id"] for x in ann["objects"]]),
-        "verbs": np.array([x["verb_category_id"] for x in ann["objects"]]),
-        "ttcs": np.array([x["time_to_contact"] for x in ann["objects"]]),
-    }
-
-    prediction = results["results"][uid]
-
-    if len(prediction) > 0:
-        pred = {
-            "boxes": np.vstack([x["box"] for x in prediction]),
-            "nouns": np.array([x["noun_category_id"] for x in prediction]),
-            "verbs": np.array([x["verb_category_id"] for x in prediction]),
-            "ttcs": np.array([x["time_to_contact"] for x in prediction]),
-            "scores": np.array([x["score"] for x in prediction]),
+        gt = {
+            "boxes": np.vstack([x["box"] for x in ann["objects"]]),
+            "nouns": np.array([x["noun_category_id"] for x in ann["objects"]]),
+            "verbs": np.array([x["verb_category_id"] for x in ann["objects"]]),
+            "ttcs": np.array([x["time_to_contact"] for x in ann["objects"]]),
         }
-    else:
-        pred = {}
 
-    map.add(pred, gt)
+        # gt = {
+        #     "boxes": np.vstack([x["box"] for x in ann["objects"]]),
+        #     "nouns": np.array([x["noun_category_id"] for x in ann["objects"]]),
+        #     # "verbs": np.array([x["verb_category_id"] for x in ann["objects"]]),
+        #     # "ttcs": np.array([x["time_to_contact"] for x in ann["objects"]]),
+        # }
 
-scores = map.evaluate()
+        prediction = results[uid]
 
-names = map.get_names()
+        if len(prediction) > 0:
+            # pred = {
+            #     "boxes": np.vstack([x["box"] for x in prediction]),
+            #     "nouns": np.array([x["noun_category_id"] for x in prediction]),
+            #     # "verbs": np.array([x["verb_category_id"] for x in prediction]),
+            #     # "ttcs": np.array([x["time_to_contact"] for x in prediction]),
+            #     "scores": np.array([x["score"] for x in prediction]),
+            # }
 
-names[-1] = "* " + names[-1]
+            pred = {
+                "boxes": np.vstack([x["box"] for x in prediction]),
+                "nouns": np.array([x["noun_category_id"] for x in prediction]),
+                "verbs": np.array([0 for x in prediction]),
+                "ttcs": np.array([0.5 for x in prediction]),
+                "scores": np.array([x["score"] for x in prediction]),
+            }
 
-for name, val in zip(names, scores):
-    print(f"{name}: {val:0.2f}")
+        else:
+            pred = {}
 
-print("* metric used to score submissions for the challenge")
+        map.add(pred, gt)
+
+    scores = map.evaluate()
+
+    names = map.get_names()
+
+    names[-1] = "* " + names[-1]
+
+    for name, val in zip(names, scores):
+        print(f"{name}: {val:0.2f}")
+
+    print("* metric used to score submissions for the challenge")

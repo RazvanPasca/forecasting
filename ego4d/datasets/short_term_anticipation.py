@@ -10,7 +10,7 @@ import lmdb
 import imutils
 import json
 from pathlib import Path
-from ego4d.evaluation.sta_metrics import compute_iou
+from Ego4d_all.forecast.ego4d.evaluation.sta_metrics import compute_iou
 
 from .build import DATASET_REGISTRY
 
@@ -37,6 +37,7 @@ from fractions import Fraction
 from typing import Iterable, List
 import av
 import numpy as np
+
 
 def pts_difference_per_frame(fps: Fraction, time_base: Fraction) -> int:
     r"""
@@ -107,17 +108,11 @@ def _get_frames_pts(
     clip_end_sec = pts_to_time_seconds(max_pts, video_base)
 
     # add some additional time for audio packets
-    clip_end_sec += max(
-        pts_to_time_seconds(include_additional_audio_pts, video_base), 1 / fps
-    )
+    clip_end_sec += max(pts_to_time_seconds(include_additional_audio_pts, video_base), 1 / fps)
 
     # --- setup
     streams_to_decode = {"video": 0}
-    if (
-        include_audio
-        and container.streams.audio is not None
-        and len(container.streams.audio) > 0
-    ):
+    if include_audio and container.streams.audio is not None and len(container.streams.audio) > 0:
         assert len(container.streams.audio) == 1
         streams_to_decode["audio"] = 0
         audio_base: Fraction = container.streams.audio[0].time_base
@@ -177,8 +172,8 @@ def _get_frames_pts(
                 yield frame
                 yielded_frames += 1
 
-    if yielded_frames<len(video_pts_set):
-        for _ in range(len(video_pts_set)-yielded_frames):
+    if yielded_frames < len(video_pts_set):
+        for _ in range(len(video_pts_set) - yielded_frames):
             yield None
 
 
@@ -196,18 +191,13 @@ def _get_frames(
     fps: Fraction = video_stream.average_rate
     video_pt_diff = pts_difference_per_frame(fps, video_base)
 
-    audio_buffer_pts = (
-        frame_index_to_pts(audio_buffer_frames, 0, video_pt_diff)
-        if include_audio
-        else 0
-    )
+    audio_buffer_pts = frame_index_to_pts(audio_buffer_frames, 0, video_pt_diff) if include_audio else 0
 
-    time_pts_set = [
-        frame_index_to_pts(f, video_start, video_pt_diff) for f in video_frames
-    ]
+    time_pts_set = [frame_index_to_pts(f, video_start, video_pt_diff) for f in video_frames]
     frames = list(_get_frames_pts(time_pts_set, container, include_audio, audio_buffer_pts))
     assert len(frames) == len(video_frames)
     return frames
+
 
 class PyAVVideoReader(object):
     def __init__(self, path_to_video, include_audio=False, audio_buffer_frames=0, height=None):
@@ -215,17 +205,19 @@ class PyAVVideoReader(object):
         self.include_audio = include_audio
         self.audio_buffer_frames = audio_buffer_frames
         self.height = height
-        
+
     def __getitem__(self, frame_list):
         if isinstance(frame_list, (int, float)):
             frame_list = [int(frame_list)]
-        elif not isinstance(frame_list,(list,tuple)):
-            frame_list=[int(f) for f in frame_list]
+        elif not isinstance(frame_list, (list, tuple)):
+            frame_list = [int(f) for f in frame_list]
         else:
             frame_list = list(frame_list)
-        
+
         with av.open(self.path_to_video) as input_video:
-            frames = _get_frames(frame_list, input_video, include_audio=self.include_audio, audio_buffer_frames=self.audio_buffer_frames)
+            frames = _get_frames(
+                frame_list, input_video, include_audio=self.include_audio, audio_buffer_frames=self.audio_buffer_frames
+            )
             frames = list(frames)
         frames = [f.to_ndarray(format="bgr24") if f is not None else None for f in frames]
         if self.height is not None:
@@ -233,9 +225,15 @@ class PyAVVideoReader(object):
         return frames
 
 
-
-class Ego4DHLMDB():
-    def __init__(self, path_to_root: Path, readonly=False, lock=False, frame_template="{video_id:s}_{frame_number:010d}", map_size=1099511627776) -> None:
+class Ego4DHLMDB:
+    def __init__(
+        self,
+        path_to_root: Path,
+        readonly=False,
+        lock=False,
+        frame_template="{video_id:s}_{frame_number:010d}",
+        map_size=1099511627776,
+    ) -> None:
         self.environments = {}
         self.path_to_root = path_to_root
         if isinstance(self.path_to_root, str):
@@ -247,40 +245,44 @@ class Ego4DHLMDB():
         self.frame_template = frame_template
 
     def _get_parent(self, parent: str) -> lmdb.Environment:
-        return lmdb.open(str(self.path_to_root / parent), map_size=self.map_size, readonly=self.readonly, lock=self.lock)
+        return lmdb.open(
+            str(self.path_to_root / parent), map_size=self.map_size, readonly=self.readonly, lock=self.lock
+        )
 
     def put_batch(self, video_id: str, frames: List[int], data: List[np.ndarray]) -> None:
         with self._get_parent(video_id) as env:
             with env.begin(write=True) as txn:
                 for frame, value in zip(frames, data):
                     if value is not None:
-                        txn.put(self.frame_template.format(video_id=video_id,frame_number=frame).encode(), cv2.imencode('.jpg', value)[1])
+                        txn.put(
+                            self.frame_template.format(video_id=video_id, frame_number=frame).encode(),
+                            cv2.imencode(".jpg", value)[1],
+                        )
 
     def put(self, video_id: str, frame: int, data: np.ndarray) -> None:
         if data is not None:
             with self._get_parent(video_id) as env:
                 with env.begin(write=True) as txn:
-                    txn.put(self.frame_template.format(video_id=video_id,frame_number=frame).encode(), cv2.imencode('.jpg', data)[1])
+                    txn.put(
+                        self.frame_template.format(video_id=video_id, frame_number=frame).encode(),
+                        cv2.imencode(".jpg", data)[1],
+                    )
 
     def get(self, video_id: str, frame: int) -> np.ndarray:
         with self._get_parent(video_id) as env:
             with env.begin(write=False) as txn:
-                data = txn.get(self.frame_template.format(video_id=video_id,frame_number=frame).encode())
+                data = txn.get(self.frame_template.format(video_id=video_id, frame_number=frame).encode())
 
-                file_bytes = np.asarray(
-                    bytearray(io.BytesIO(data).read()), dtype=np.uint8
-                )
+                file_bytes = np.asarray(bytearray(io.BytesIO(data).read()), dtype=np.uint8)
                 return cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-    
+
     def get_batch(self, video_id: str, frames: List[int]) -> List[np.ndarray]:
         out = []
         with self._get_parent(video_id) as env:
             with env.begin() as txn:
                 for frame in frames:
-                    data = txn.get(self.frame_template.format(video_id=video_id,frame_number=frame).encode())
-                    file_bytes = np.asarray(
-                        bytearray(io.BytesIO(data).read()), dtype=np.uint8
-                    )
+                    data = txn.get(self.frame_template.format(video_id=video_id, frame_number=frame).encode())
+                    file_bytes = np.asarray(bytearray(io.BytesIO(data).read()), dtype=np.uint8)
                     out.append(cv2.imdecode(file_bytes, cv2.IMREAD_COLOR))
             return out
 
@@ -291,6 +293,7 @@ class Ego4DHLMDB():
                 with env.begin() as txn:
                     keys += list(txn.cursor().iternext(values=False))
         return keys
+
 
 @DATASET_REGISTRY.register()
 class Ego4dShortTermAnticipation(torch.utils.data.Dataset):
@@ -325,28 +328,25 @@ class Ego4dShortTermAnticipation(torch.utils.data.Dataset):
             self._crop_size = cfg.DATA.TEST_CROP_SIZE
             self._test_force_flip = cfg.EGO4D_STA.TEST_FORCE_FLIP
 
-        if self.cfg.EGO4D_STA.VIDEO_LOAD_BACKEND == 'lmdb':
+        if self.cfg.EGO4D_STA.VIDEO_LOAD_BACKEND == "lmdb":
             self._hlmdb = Ego4DHLMDB(self.cfg.EGO4D_STA.RGB_LMDB_DIR, readonly=True, lock=False)
 
         self._obj_detections = json.load(open(cfg.EGO4D_STA.OBJ_DETECTIONS))
-            
+
         self._load_data(cfg)
 
     def _load_lists(self, _list):
         def extend_dict(input_dict, output_dict):
-            for k,v in input_dict.items():
-                output_dict[k]=v
+            for k, v in input_dict.items():
+                output_dict[k] = v
             return output_dict
 
-        res = {
-            'videos': {},
-            'annotations': []
-        }
+        res = {"videos": {}, "annotations": []}
         for l in _list:
-            j = json.load(open(os.path.join(self.cfg.EGO4D_STA.ANNOTATION_DIR,l)))
-            res['videos'] = extend_dict(j['info']['video_metadata'], res['videos'])
-            res['annotations'] += j['annotations']
-        
+            j = json.load(open(os.path.join(self.cfg.EGO4D_STA.ANNOTATION_DIR, l)))
+            res["videos"] = extend_dict(j["info"]["video_metadata"], res["videos"])
+            res["annotations"] += j["annotations"]
+
         return res
 
     def _load_data(self, cfg):
@@ -365,7 +365,7 @@ class Ego4dShortTermAnticipation(torch.utils.data.Dataset):
             self._annotations = self._load_lists(cfg.EGO4D_STA.TEST_LISTS)
 
     def __len__(self):
-        return len(self._annotations['annotations'])
+        return len(self._annotations["annotations"])
 
     def _images_and_boxes_preprocessing_cv2(self, imgs, boxes):
         """
@@ -380,7 +380,7 @@ class Ego4dShortTermAnticipation(torch.utils.data.Dataset):
             imgs (tensor): list of preprocessed images.
             boxes (ndarray): preprocessed boxes.
         """
-
+        imgs = [imutils.resize(img, height=320) for img in imgs]
         height, width, _ = imgs[0].shape
 
         boxes[:, [0, 2]] *= width
@@ -399,40 +399,26 @@ class Ego4dShortTermAnticipation(torch.utils.data.Dataset):
                 max_size=self._jitter_max_scale,
                 boxes=boxes,
             )
-            imgs, boxes = cv2_transform.random_crop_list(
-                imgs, self._crop_size, order="HWC", boxes=boxes
-            )
+            imgs, boxes = cv2_transform.random_crop_list(imgs, self._crop_size, order="HWC", boxes=boxes)
 
             if self.random_horizontal_flip:
                 # random flip
-                imgs, boxes = cv2_transform.horizontal_flip_list(
-                    0.5, imgs, order="HWC", boxes=boxes
-                )
+                imgs, boxes = cv2_transform.horizontal_flip_list(0.5, imgs, order="HWC", boxes=boxes)
         elif self._split == "val":
             # Short side to test_scale. Non-local and STRG uses 256.
             imgs = [cv2_transform.scale(self._crop_size, img) for img in imgs]
-            boxes = [
-                cv2_transform.scale_boxes(self._crop_size, boxes[0], height, width)
-            ]
-            imgs, boxes = cv2_transform.spatial_shift_crop_list(
-                self._crop_size, imgs, 1, boxes=boxes
-            )
+            boxes = [cv2_transform.scale_boxes(self._crop_size, boxes[0], height, width)]
+            imgs, boxes = cv2_transform.spatial_shift_crop_list(self._crop_size, imgs, 1, boxes=boxes)
 
             if self._test_force_flip:
-                imgs, boxes = cv2_transform.horizontal_flip_list(
-                    1, imgs, order="HWC", boxes=boxes
-                )
+                imgs, boxes = cv2_transform.horizontal_flip_list(1, imgs, order="HWC", boxes=boxes)
         elif self._split == "test":
             # Short side to test_scale. Non-local and STRG uses 256.
             imgs = [cv2_transform.scale(self._crop_size, img) for img in imgs]
-            boxes = [
-                cv2_transform.scale_boxes(self._crop_size, boxes[0], height, width)
-            ]
+            boxes = [cv2_transform.scale_boxes(self._crop_size, boxes[0], height, width)]
 
             if self._test_force_flip:
-                imgs, boxes = cv2_transform.horizontal_flip_list(
-                    1, imgs, order="HWC", boxes=boxes
-                )
+                imgs, boxes = cv2_transform.horizontal_flip_list(1, imgs, order="HWC", boxes=boxes)
         else:
             raise NotImplementedError("Unsupported split mode {}".format(self._split))
 
@@ -453,9 +439,7 @@ class Ego4dShortTermAnticipation(torch.utils.data.Dataset):
         # Do color augmentation (after divided by 255.0).
         if self._split == "train" and self._use_color_augmentation:
             if not self._pca_jitter_only:
-                imgs = cv2_transform.color_jitter_list(
-                    imgs, img_brightness=0.4, img_contrast=0.4, img_saturation=0.4
-                )
+                imgs = cv2_transform.color_jitter_list(imgs, img_brightness=0.4, img_contrast=0.4, img_saturation=0.4)
 
             imgs = cv2_transform.lighting_list(
                 imgs,
@@ -483,9 +467,7 @@ class Ego4dShortTermAnticipation(torch.utils.data.Dataset):
 
         imgs = np.ascontiguousarray(imgs)
         imgs = torch.from_numpy(imgs)
-        boxes = cv2_transform.clip_boxes_to_image(
-            boxes[0], imgs[0].shape[1], imgs[0].shape[2]
-        )
+        boxes = cv2_transform.clip_boxes_to_image(boxes[0], imgs[0].shape[1], imgs[0].shape[2])
         return imgs, boxes
 
     def _images_and_boxes_preprocessing(self, imgs, boxes):
@@ -532,9 +514,7 @@ class Ego4dShortTermAnticipation(torch.utils.data.Dataset):
             )
 
             # Apply center crop for val split
-            imgs, boxes = transform.uniform_crop(
-                imgs, size=self._crop_size, spatial_idx=1, boxes=boxes
-            )
+            imgs, boxes = transform.uniform_crop(imgs, size=self._crop_size, spatial_idx=1, boxes=boxes)
 
             if self._test_force_flip:
                 imgs, boxes = transform.horizontal_flip(1, imgs, boxes=boxes)
@@ -553,9 +533,7 @@ class Ego4dShortTermAnticipation(torch.utils.data.Dataset):
         # Do color augmentation (after divided by 255.0).
         if self._split == "train" and self._use_color_augmentation:
             if not self._pca_jitter_only:
-                imgs = transform.color_jitter(
-                    imgs, img_brightness=0.4, img_contrast=0.4, img_saturation=0.4
-                )
+                imgs = transform.color_jitter(imgs, img_brightness=0.4, img_contrast=0.4, img_saturation=0.4)
 
             imgs = transform.lighting_jitter(
                 imgs,
@@ -595,31 +573,26 @@ class Ego4dShortTermAnticipation(torch.utils.data.Dataset):
 
         video_data = vr.get_batch(frames).permute(3, 0, 1, 2)
         return video_data
-    
+
     def _load_frames_pyav(self, video_filename, frame_number, fps):
         assert frame_number > 0
 
         vr = PyAVVideoReader(video_filename, height=320)
 
-        frames = (
-                frame_number
-                - np.arange(
+        frames = frame_number - np.arange(
             self.cfg.DATA.NUM_FRAMES * self.cfg.DATA.SAMPLING_RATE,
             step=self.cfg.DATA.SAMPLING_RATE,
-            )[::-1]
-        )
+        )[::-1]
         frames[frames < 1] = 1
 
         frames = frames.astype(int)
 
         imgs = vr[frames]
-        
+
         return imgs
 
     def _load_frames_pytorch_video(self, video_filename, frame_number, fps):
-        clip_duration = (
-            self.cfg.DATA.NUM_FRAMES * self.cfg.DATA.SAMPLING_RATE - 1
-        ) / fps
+        clip_duration = (self.cfg.DATA.NUM_FRAMES * self.cfg.DATA.SAMPLING_RATE - 1) / fps
         clip_end_sec = frame_number / fps
         clip_start_sec = clip_end_sec - clip_duration
 
@@ -631,7 +604,6 @@ class Ego4dShortTermAnticipation(torch.utils.data.Dataset):
         video_data = uniform_temporal_subsample(video_data, self.cfg.DATA.NUM_FRAMES)
         # video_data = short_side_scale(video_data, )
         return video_data
-
 
     def _retry_load_images_lmdb(self, video_id, frames, retry=10, backend="pytorch"):
         """
@@ -648,7 +620,7 @@ class Ego4dShortTermAnticipation(torch.utils.data.Dataset):
         for i in range(retry):
             imgs = []
             imgs = self._hlmdb.get_batch(video_id, frames)
-            
+
             if all(img is not None for img in imgs):
                 if backend == "pytorch":
                     imgs = torch.as_tensor(np.stack(imgs))
@@ -660,13 +632,10 @@ class Ego4dShortTermAnticipation(torch.utils.data.Dataset):
                 raise Exception("Failed to load frames from video {}: {}".format(video_id, frames))
 
     def _sample_frames(self, frame):
-        frames = (
-                frame
-                - np.arange(
+        frames = frame - np.arange(
             self.cfg.DATA.NUM_FRAMES * self.cfg.DATA.SAMPLING_RATE,
             step=self.cfg.DATA.SAMPLING_RATE,
-            )[::-1]
-        )
+        )[::-1]
         frames[frames < 0] = 0
 
         frames = frames.astype(int)
@@ -675,83 +644,90 @@ class Ego4dShortTermAnticipation(torch.utils.data.Dataset):
 
     def _load_annotations(self, idx):
         # get the idx-th annotation
-        ann = self._annotations['annotations'][idx]
-        uid = ann['uid']
+        ann = self._annotations["annotations"][idx]
+        uid = ann["uid"]
 
         # get video_id, frame_number, gt_boxes, gt_noun_labels, gt_verb_labels and gt_ttc_targets
-        video_id = ann["video_uid"]
-        frame_number = ann['frame']
+        video_id = ann["video_id"]
+        frame_number = ann["frame"]
 
-        if 'objects' in ann:
-            gt_boxes = np.vstack([x['box'] for x in ann['objects']])
-            gt_noun_labels = np.array([x['noun_category_id'] for x in ann['objects']])
-            gt_verb_labels = np.array([x['verb_category_id'] for x in ann['objects']])
-            gt_ttc_targets = np.array([x['time_to_contact'] for x in ann['objects']])
+        if "objects" in ann:
+            gt_boxes = np.vstack([x["box"] for x in ann["objects"]])
+            gt_noun_labels = np.array([x["noun_category_id"] for x in ann["objects"]])
+            gt_verb_labels = np.array([x["verb_category_id"] for x in ann["objects"]])
+            gt_ttc_targets = np.array([x["time_to_contact"] for x in ann["objects"]])
         else:
             gt_boxes = gt_noun_labels = gt_verb_labels = gt_ttc_targets = None
 
-        frame_width, frame_height = self._annotations['videos'][video_id]['frame_width'], self._annotations['videos'][video_id]['frame_height']
+        frame_width, frame_height = (
+            self._annotations["videos"][video_id]["frame_width"],
+            self._annotations["videos"][video_id]["frame_height"],
+        )
 
-        fps = self._annotations['videos'][video_id]['fps']
+        fps = self._annotations["videos"][video_id]["fps"]
 
-        return uid, video_id, frame_width, frame_height, frame_number, fps, gt_boxes, gt_noun_labels, gt_verb_labels, gt_ttc_targets
+        return (
+            uid,
+            video_id,
+            frame_width,
+            frame_height,
+            frame_number,
+            fps,
+            gt_boxes,
+            gt_noun_labels,
+            gt_verb_labels,
+            gt_ttc_targets,
+        )
 
     def _load_detections(self, uid):
         # get the object detections for the current example
         object_detections = self._obj_detections[uid]
 
-        if len(object_detections)>0:
-            pred_boxes = np.vstack([x['box'] for x in object_detections])
-            pred_scores = np.array([x['score'] for x in object_detections])
-            pred_object_labels = np.array([x['noun_category_id'] for x in object_detections])
+        if len(object_detections) > 0:
+            pred_boxes = np.vstack([x["box"] for x in object_detections])
+            pred_scores = np.array([x["score"] for x in object_detections])
+            pred_object_labels = np.array([x["noun_category_id"] for x in object_detections])
 
             # exclude detections below the theshold
-            detected = (
-                    pred_scores
-                    >= self.cfg.EGO4D_STA.DETECTION_SCORE_THRESH
-            )
+            detected = pred_scores >= self.cfg.EGO4D_STA.DETECTION_SCORE_THRESH
 
             pred_boxes = pred_boxes[detected]
             pred_object_labels = pred_object_labels[detected]
             pred_scores = pred_scores[detected]
         else:
-            pred_boxes = np.zeros((0,4))
+            pred_boxes = np.zeros((0, 4))
             pred_scores = pred_object_labels = np.array([])
-        
+
         return pred_boxes, pred_object_labels, pred_scores
 
     def _load_frames(self, video_id, frame_number, fps):
-        if self.cfg.EGO4D_STA.VIDEO_LOAD_BACKEND == 'pytorchvideo':
-            frames = self._load_frames_pytorch_video(join(self.cfg.EGO4D_STA.VIDEO_DIR, video_id + '.mp4'), frame_number, fps)
-        elif self.cfg.EGO4D_STA.VIDEO_LOAD_BACKEND == 'decord':
-            frames = self._load_frames_decord(join(self.cfg.EGO4D_STA.VIDEO_DIR, video_id + '.mp4'), frame_number, fps)
-        elif self.cfg.EGO4D_STA.VIDEO_LOAD_BACKEND == 'pyav':
-            frames = self._load_frames_pyav(join(self.cfg.EGO4D_STA.VIDEO_DIR, video_id + '.mp4'), frame_number, fps)
-        elif self.cfg.EGO4D_STA.VIDEO_LOAD_BACKEND == 'lmdb':
+        if self.cfg.EGO4D_STA.VIDEO_LOAD_BACKEND == "pytorchvideo":
+            frames = self._load_frames_pytorch_video(
+                join(self.cfg.EGO4D_STA.VIDEO_DIR, video_id + ".mp4"), frame_number, fps
+            )
+        elif self.cfg.EGO4D_STA.VIDEO_LOAD_BACKEND == "decord":
+            frames = self._load_frames_decord(join(self.cfg.EGO4D_STA.VIDEO_DIR, video_id + ".mp4"), frame_number, fps)
+        elif self.cfg.EGO4D_STA.VIDEO_LOAD_BACKEND == "pyav":
+            frames = self._load_frames_pyav(join(self.cfg.EGO4D_STA.VIDEO_DIR, video_id + ".mp4"), frame_number, fps)
+        elif self.cfg.EGO4D_STA.VIDEO_LOAD_BACKEND == "lmdb":
             # sample the list of frames in the clip
-            #key_list = self._sample_frame_keys(video_id, frame_number)
+            # key_list = self._sample_frame_keys(video_id, frame_number)
             frames_list = self._sample_frames(frame_number)
             # # retrieve frames
-            frames = self._retry_load_images_lmdb(
-                video_id, frames_list, backend="cv2"
-            )
+            frames = self._retry_load_images_lmdb(video_id, frames_list, backend="cv2")
         return frames
-    
+
     def _preprocess_frames_and_boxes(self, frames, boxes):
-        if self.cfg.EGO4D_STA.VIDEO_LOAD_BACKEND in ['pytorchvideo',"decord"]:
+        if self.cfg.EGO4D_STA.VIDEO_LOAD_BACKEND in ["pytorchvideo", "decord"]:
             video_tensor = frames.permute(1, 0, 2, 3)
 
-            video_tensor, boxes = self._images_and_boxes_preprocessing(
-                video_tensor, boxes=boxes
-            )
+            video_tensor, boxes = self._images_and_boxes_preprocessing(video_tensor, boxes=boxes)
 
             # T C H W -> C T H W.
             video_tensor = video_tensor.permute(1, 0, 2, 3)
         else:
             # Preprocess images and boxes
-                video_tensor, boxes = self._images_and_boxes_preprocessing_cv2(
-                    frames, boxes=boxes
-                )
+            video_tensor, boxes = self._images_and_boxes_preprocessing_cv2(frames, boxes=boxes)
         return video_tensor, boxes
 
     def __getitem__(self, idx):
@@ -772,56 +748,67 @@ class Ego4dShortTermAnticipation(torch.utils.data.Dataset):
                 'pred_object_labels': associated predicted object labels
                 'gt_detections': dictionary containing the ground truth predictions for the current frame
         """
-        uid, video_id, frame_width, frame_height, frame_number, fps, gt_boxes, gt_noun_labels, gt_verb_labels, gt_ttc_targets = self._load_annotations(idx)
+        (
+            uid,
+            video_id,
+            frame_width,
+            frame_height,
+            frame_number,
+            fps,
+            gt_boxes,
+            gt_noun_labels,
+            gt_verb_labels,
+            gt_ttc_targets,
+        ) = self._load_annotations(idx)
         pred_boxes, pred_object_labels, pred_scores = self._load_detections(uid)
 
         frames = self._load_frames(video_id, frame_number, fps)
 
         orig_pred_boxes = pred_boxes.copy()
-        nn = np.array([frame_width, frame_height]*2).reshape(1,-1)
-        pred_boxes/=nn
+        nn = np.array([frame_width, frame_height] * 2).reshape(1, -1)
+        pred_boxes /= nn
 
-        if gt_boxes is None: # unlabeled example
-            video_tensor, pred_boxes =self._preprocess_frames_and_boxes(frames, pred_boxes)
+        if gt_boxes is None:  # unlabeled example
+            video_tensor, pred_boxes = self._preprocess_frames_and_boxes(frames, pred_boxes)
             imgs = utils.pack_pathway_output(self.cfg, video_tensor)
 
             extra_data = {
-                'orig_pred_boxes': orig_pred_boxes,
-                'pred_object_scores': pred_scores,
-                'pred_object_labels': pred_object_labels
+                "orig_pred_boxes": orig_pred_boxes,
+                "pred_object_scores": pred_scores,
+                "pred_object_labels": pred_object_labels,
             }
-            
+
             return uid, imgs, pred_boxes, np.array([]), np.array([]), extra_data
         else:
             orig_gt_boxes = gt_boxes.copy()
-            gt_boxes/=nn
+            gt_boxes /= nn
 
             # put all boxes together
             all_boxes = np.vstack([gt_boxes, pred_boxes])
-        
-            video_tensor, all_boxes =self._preprocess_frames_and_boxes(frames, all_boxes)
+
+            video_tensor, all_boxes = self._preprocess_frames_and_boxes(frames, all_boxes)
 
             # separate ground truth from predicted boxes after pre-processing
             gt_boxes = all_boxes[: len(gt_boxes)]
             pred_boxes = all_boxes[len(gt_boxes) :]
 
-            if self._split=='train' and self.cfg.EGO4D_STA.PROPOSAL_APPEND_GT:
+            if self._split == "train" and self.cfg.EGO4D_STA.PROPOSAL_APPEND_GT:
                 pred_boxes = np.concatenate([pred_boxes, gt_boxes])
                 orig_pred_boxes = np.concatenate([orig_pred_boxes, orig_gt_boxes])
                 pred_object_labels = np.concatenate([pred_object_labels, gt_noun_labels])
                 pred_scores = np.concatenate([pred_scores, np.ones_like(gt_noun_labels)])
-        
+
             # match predicted boxes to ground truth
             # compute IOU values
             ious = compute_iou(pred_boxes, gt_boxes)
 
             # get the indexes of the largest IOU - these are the matches
-            matches = ious.argmax(-1) # index of the matched gt_box for each pred_box
+            matches = ious.argmax(-1)  # index of the matched gt_box for each pred_box
 
             # get the largest IOU for each predicted box
             ious = ious.max(-1)
 
-            next_active_labels = (ious >= self.cfg.EGO4D_STA.NAO_IOU_THRESH)
+            next_active_labels = ious >= self.cfg.EGO4D_STA.NAO_IOU_THRESH
 
             gt_detections = {
                 "boxes": orig_gt_boxes,
@@ -841,21 +828,14 @@ class Ego4dShortTermAnticipation(torch.utils.data.Dataset):
             # copy ttc targets of the matched boxes
             ttc_targets = gt_ttc_targets[matches]
 
-            #set ttc targets related to non next-active objects to NaN
+            # set ttc targets related to non next-active objects to NaN
             ttc_targets[next_active_labels == False] = np.NaN
 
             extra_data = {
-                'orig_pred_boxes': orig_pred_boxes,
-                'pred_object_scores': pred_scores,
-                'pred_object_labels': pred_object_labels,
-                'gt_detections': gt_detections
+                "orig_pred_boxes": orig_pred_boxes,
+                "pred_object_scores": pred_scores,
+                "pred_object_labels": pred_object_labels,
+                "gt_detections": gt_detections,
             }
 
-            return (
-                uid,
-                imgs,
-                pred_boxes,
-                verb_labels,
-                ttc_targets,
-                extra_data
-            )
+            return (uid, imgs, pred_boxes, verb_labels, ttc_targets, extra_data)

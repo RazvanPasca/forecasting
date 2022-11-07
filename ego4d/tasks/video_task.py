@@ -31,7 +31,9 @@ class VideoTask(LightningModule):
 
         self.cfg = cfg
         self.save_hyperparameters()
+        print(cfg)
         self.model = build_model(cfg)
+        print(type(self.model))
         self.loss_fun = losses.get_loss_func(self.cfg.MODEL.LOSS_FUNC)(reduction="mean")
 
     def training_step(self, batch, batch_idx):
@@ -68,9 +70,7 @@ class VideoTask(LightningModule):
 
     def configure_optimizers(self):
         steps_in_epoch = len(self.train_loader)
-        return lr_scheduler.lr_factory(
-            self.model, self.cfg, steps_in_epoch, self.cfg.SOLVER.LR_POLICY
-        )
+        return lr_scheduler.lr_factory(self.model, self.cfg, steps_in_epoch, self.cfg.SOLVER.LR_POLICY)
 
     def train_dataloader(self):
         return self.train_loader
@@ -82,16 +82,9 @@ class VideoTask(LightningModule):
         return self.test_loader
 
     def on_after_backward(self):
-        if (
-            self.cfg.LOG_GRADIENT_PERIOD >= 0
-            and self.trainer.global_step % self.cfg.LOG_GRADIENT_PERIOD == 0
-        ):
+        if self.cfg.LOG_GRADIENT_PERIOD >= 0 and self.trainer.global_step % self.cfg.LOG_GRADIENT_PERIOD == 0:
             for name, weight in self.model.named_parameters():
                 if weight is not None:
-                    self.logger.experiment.add_histogram(
-                        name, weight, self.trainer.global_step
-                    )
+                    self.logger.experiment.add_histogram(name, weight, self.trainer.global_step)
                     if weight.grad is not None:
-                        self.logger.experiment.add_histogram(
-                            f"{name}.grad", weight.grad, self.trainer.global_step
-                        )
+                        self.logger.experiment.add_histogram(f"{name}.grad", weight.grad, self.trainer.global_step)

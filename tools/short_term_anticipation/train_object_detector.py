@@ -61,6 +61,8 @@ def main(args):
     else:
         cfg.MODEL.RETINANET.NUM_CLASSES = num_classes
 
+    cfg.MODEL.DEVICE="cpu"
+
     if args.base_lr is not None:
         cfg.SOLVER.BASE_LR = args.base_lr
 
@@ -75,30 +77,52 @@ def main(args):
 if __name__ == '__main__':
     parser = ArgumentParser()
 
-    parser.add_argument('path_to_train_json', type=Path)
-    parser.add_argument('path_to_val_json', type=Path)
-    parser.add_argument('path_to_images', type=Path)
-    parser.add_argument('output_dir', type=Path)
-    parser.add_argument('--num_gpus', type=int, default=4)
-    parser.add_argument('--checkpoint_period', type=int, default=5000)
-    parser.add_argument('--eval_period', type=int, default=5000)
-    parser.add_argument('--base', type=str, default='R50_FPN_3x')
-    parser.add_argument('--arch', type=str, default='faster_rcnn')
-    parser.add_argument('--base_lr', type=float, default=0.001)
-    parser.add_argument('--port_aug', type=int, default=0)
+    # parser.add_argument(
+    #     "path_to_train_json",
+    #     type=Path,
+    #     default=Path(
+    #         "/local/home/rpasca/Thesis/Ego4d_all/forecast/short_term_anticipation/annotations/train_coco.json"
+    #     ),
+    # )
+    # parser.add_argument(
+    #     "path_to_val_json",
+    #     type=Path,
+    #     default="/local/home/rpasca/Thesis/Ego4d_all/forecast/short_term_anticipation/annotations/train_coco.json",
+    # )
+    # parser.add_argument(
+    #     "path_to_images",
+    #     type=Path,
+    #     default="/local/home/rpasca/Thesis/Ego4d_all/forecast/tools/short_term_anticipation/data/object_frames",
+    # )
+    # parser.add_argument(
+    #     "output_dir",
+    #     type=Path,
+    #     default="/local/home/rpasca/Thesis/Ego4d_all/forecast/tools/short_term_anticipation/models/object_detector",
+    # )
+    parser.add_argument("--num_gpus", type=int, default=1)
+    parser.add_argument("--checkpoint_period", type=int, default=5000)
+    parser.add_argument("--eval_period", type=int, default=5000)
+    parser.add_argument("--base", type=str, default="R50_FPN_3x")
+    parser.add_argument("--arch", type=str, default="faster_rcnn")
+    parser.add_argument("--base_lr", type=float, default=0.001)
+    parser.add_argument("--port_aug", type=int, default=0)
 
     args = parser.parse_args()
+    args.path_to_train_json = (
+        "/local/home/rpasca/Thesis/Ego4d_all/forecast/short_term_anticipation/annotations/train_coco.json"
+    )
+    args.path_to_val_json = (
+        "/local/home/rpasca/Thesis/Ego4d_all/forecast/short_term_anticipation/annotations/train_coco.json"
+    )
+    args.path_to_images = Path(
+        "/local/home/rpasca/Thesis/Ego4d_all/forecast/tools/short_term_anticipation/data/object_frames"
+    )
+    args.output_dir = Path(
+        "/local/home/rpasca/Thesis/Ego4d_all/forecast/tools/short_term_anticipation/models/object_detector"
+    )
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     port = 2 ** 15 + 2 ** 14 + hash(os.getuid() if sys.platform != "win32" else 1) % 2 ** 14 + args.port_aug
 
-    launch(
-        main,
-        args.num_gpus,
-        num_machines=1,
-        machine_rank=0,
-        dist_url=f'tcp://127.0.0.1:{port}',
-        args=(args,)
-    )
-
+    launch(main, args.num_gpus, num_machines=1, machine_rank=0, dist_url=f"tcp://127.0.0.1:{port}", args=(args,))

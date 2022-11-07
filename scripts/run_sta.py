@@ -2,15 +2,15 @@ import os
 import pickle
 import pprint
 
-import ego4d.utils.logging as logging
+import Ego4d_all.forecast.ego4d.utils.logging as logging
 import numpy as np
 import torch
-from ego4d.tasks.short_term_anticipation import ShortTermAnticipationTask
-from ego4d.utils.c2_model_loading import get_name_convert_func
-from ego4d.utils.parser import load_config, parse_args
+from Ego4d_all.forecast.ego4d.tasks.short_term_anticipation import ShortTermAnticipationTask
+from Ego4d_all.forecast.ego4d.utils.c2_model_loading import get_name_convert_func
+from Ego4d_all.forecast.ego4d.utils.parser import load_config, parse_args
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
-from scripts.slurm import copy_and_run_with_config
+from Ego4d_all.forecast.scripts.slurm import copy_and_run_with_config
 from pytorch_lightning.plugins import DDPPlugin
 
 
@@ -59,14 +59,8 @@ def main(cfg):
             def remove_first_module(key):
                 return ".".join(key.split(".")[1:])
 
-            state_dict = {
-                remove_first_module(k): v
-                for k, v in ckpt["state_dict"].items()
-                if "head" not in k
-            }
-            missing_keys, unexpected_keys = task.model.backbone.load_state_dict(
-                state_dict, strict=False
-            )
+            state_dict = {remove_first_module(k): v for k, v in ckpt["state_dict"].items() if "head" not in k}
+            missing_keys, unexpected_keys = task.model.backbone.load_state_dict(state_dict, strict=False)
 
             # Ensure only head key is missing.
             assert len(unexpected_keys) == 0
@@ -86,16 +80,14 @@ def main(cfg):
                 state_dict = state_dict_for_child_module[child_name]
                 child_module.load_state_dict(state_dict)
 
-    checkpoint_callback = ModelCheckpoint(
-        monitor=task.checkpoint_metric, mode="min", save_last=True, save_top_k=1
-    )
+    checkpoint_callback = ModelCheckpoint(monitor=task.checkpoint_metric, mode="min", save_last=True, save_top_k=1)
     if cfg.ENABLE_LOGGING:
         args = {"callbacks": [LearningRateMonitor(), checkpoint_callback]}
     else:
         args = {"logger": False, "callbacks": checkpoint_callback}
 
     trainer = Trainer(
-        gpus=cfg.NUM_GPUS,
+        gpus=[gpu],
         num_nodes=cfg.NUM_SHARDS,
         accelerator=cfg.SOLVER.ACCELERATOR,
         max_epochs=cfg.SOLVER.MAX_EPOCH,
@@ -103,9 +95,10 @@ def main(cfg):
         benchmark=True,
         log_gpu_memory="min_max",
         replace_sampler_ddp=False,
-        fast_dev_run=cfg.FAST_DEV_RUN,
+        fast_dev_run=False,
         default_root_dir=cfg.OUTPUT_DIR,
         plugins=DDPPlugin(find_unused_parameters=False),
+        auto_select_gpus=True,
         **args,
     )
 
@@ -125,7 +118,18 @@ def main(cfg):
 
 if __name__ == "__main__":
     args = parse_args()
+    args.cfg_file = "/local/home/rpasca/Thesis/Ego4d_all/forecast/configs/Ego4dShortTermAnticipation/SLOWFAST_32x1_8x4_R50_no_verb.yaml"
+
+    gpu = args.gpu
+    del args.gpu
+
     cfg = load_config(args)
+    cfg.EGO4D_STA.OBJ_DETECTIONS = (
+        "/local/home/rpasca/Thesis/Ego4d_all/forecast/short_term_anticipation/object_detections.json"
+    )
+    cfg.EGO4D_STA.RGB_LMDB_DIR = os.path.expandvars("$DATA/Ego4d/data/lmdb")
+    cfg.EGO4D_STA.ANNOTATION_DIR = os.path.expandvars("$DATA/Ego4d/data/annotations")
+    print(cfg)
     if args.on_cluster:
         copy_and_run_with_config(
             main,
@@ -134,8 +138,8 @@ if __name__ == "__main__":
             job_name=args.job_name,
             time="72:00:00",
             partition="learnfair",
-            gpus_per_node=cfg.NUM_GPUS,
-            ntasks_per_node=cfg.NUM_GPUS,
+            gpus_per_node=1,
+            ntasks_per_node=1,
             cpus_per_task=10,
             mem="470GB",
             nodes=cfg.NUM_SHARDS,

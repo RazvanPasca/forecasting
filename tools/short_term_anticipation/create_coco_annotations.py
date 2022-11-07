@@ -42,7 +42,7 @@ annotations = []
 for example in tqdm(labels['annotations']):
     uid = example['uid']
     fname = f"{uid}.jpg"
-    video_info = labels['info']['video_metadata'][example['video_uid']]
+    video_info = labels['info']['video_metadata'][example['video_id']]
 
     if fname not in filenames_to_ids:
         filenames_to_ids[fname] = progressive_image_id

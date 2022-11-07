@@ -11,22 +11,23 @@ from detectron2.layers import ROIAlign
 from .build import MODEL_REGISTRY
 from .video_model_builder import ResNet, SlowFast, _POOL1
 
+
 class ResNetSTARoIHead(nn.Module):
     """
     ResNe(X)t RoI head.
     """
 
     def __init__(
-            self,
-            dim_in,
-            num_verbs,
-            pool_size,
-            resolution,
-            scale_factor,
-            dropout_rate=0.0,
-            verb_act_func=(None, "softmax"),
-            ttc_act_func=("softplus", "softplus"),
-            aligned=True,
+        self,
+        dim_in,
+        num_verbs,
+        pool_size,
+        resolution,
+        scale_factor,
+        dropout_rate=0.0,
+        verb_act_func=(None, "softmax"),
+        ttc_act_func=("softplus", "softplus"),
+        aligned=True,
     ):
         """
         The `__init__` method of any subclass should also contain these
@@ -66,9 +67,7 @@ class ResNetSTARoIHead(nn.Module):
             performance if ROIAlign is used together with conv layers.
         """
         super(ResNetSTARoIHead, self).__init__()
-        assert (
-            len({len(pool_size), len(dim_in)}) == 1
-        ), "pathway dimensions are not consistent."
+        assert len({len(pool_size), len(dim_in)}) == 1, "pathway dimensions are not consistent."
         self.num_pathways = len(pool_size)
         for pathway in range(self.num_pathways):
             temporal_pool = nn.AvgPool3d([pool_size[pathway][0], 1, 1], stride=1)
@@ -106,23 +105,21 @@ class ResNetSTARoIHead(nn.Module):
                 act = None
             elif act_func is None:
                 act = None
+            elif act_func == -1:
+                act = None
             else:
-                raise NotImplementedError(
-                    "{} is not supported as an activation" "function.".format(act_func)
-                )
+                raise NotImplementedError("{} is not supported as an activation" "function.".format(act_func))
             return act
 
         self.verb_act = [get_act(x) for x in verb_act_func]
         self.ttc_act = [get_act(x) for x in ttc_act_func]
 
     def forward(self, inputs, bboxes):
-        if bboxes.shape[0]==0: # handle cases in which zero boxes are passed as input
+        if bboxes.shape[0] == 0:  # handle cases in which zero boxes are passed as input
             x_verb = torch.zeros((0, self.verb_projection.out_features))
             x_ttc = torch.zeros((0, self.ttc_projection.out_features))
             return x_verb, x_ttc
-        assert (
-            len(inputs) == self.num_pathways
-        ), "Input tensor does not contain {} pathway".format(self.num_pathways)
+        assert len(inputs) == self.num_pathways, "Input tensor does not contain {} pathway".format(self.num_pathways)
         pool_out = []
         for pathway in range(self.num_pathways):
             t_pool = getattr(self, "s{}_tpool".format(pathway))
@@ -174,7 +171,7 @@ class ShortTermAnticipationResNet(ResNet):
             scale_factor=[cfg.DETECTION.SPATIAL_SCALE_FACTOR],
             dropout_rate=cfg.MODEL.DROPOUT_RATE,
             verb_act_func=(None, cfg.MODEL.HEAD_VERB_ACT),
-            ttc_act_func=(cfg.MODEL.HEAD_TTC_ACT,)*2,
+            ttc_act_func=(cfg.MODEL.HEAD_TTC_ACT,) * 2,
             aligned=cfg.DETECTION.ALIGNED,
         )
         self.head_name = "headsta"
@@ -207,7 +204,7 @@ class ShortTermAnticipationSlowFast(SlowFast):
             scale_factor=[cfg.DETECTION.SPATIAL_SCALE_FACTOR] * 2,
             dropout_rate=cfg.MODEL.DROPOUT_RATE,
             verb_act_func=(None, cfg.MODEL.HEAD_VERB_ACT),
-            ttc_act_func=(cfg.MODEL.HEAD_TTC_ACT,)*2,
+            ttc_act_func=(cfg.MODEL.HEAD_TTC_ACT,) * 2,
             aligned=cfg.DETECTION.ALIGNED,
         )
         self.head_name = "headsta"
@@ -233,28 +230,24 @@ class ShortTermAnticipationSlowFast(SlowFast):
     def pack_boxes(self, bboxes):
         """Packs images and boxes so that they can be processed in batch"""
         # compute indexes
-        idx = torch.from_numpy(np.concatenate([[i]*len(b) for i, b in enumerate(bboxes)]))
+        idx = torch.from_numpy(np.concatenate([[i] * len(b) for i, b in enumerate(bboxes)]))
 
         # add indexes as first column of boxes
         bboxes = torch.cat(bboxes, 0)
-        bboxes = torch.cat([idx.view(-1,1).to(bboxes.device), bboxes], 1)
+        bboxes = torch.cat([idx.view(-1, 1).to(bboxes.device), bboxes], 1)
 
         return bboxes
 
-    def postprocess(self,
-                    pred_boxes,
-                    pred_object_labels,
-                    pred_object_scores,
-                    pred_verbs,
-                    pred_ttcs
-                    ):
+    def postprocess(self, pred_boxes, pred_object_labels, pred_object_scores, pred_verbs, pred_ttcs):
         """Obtains detections"""
 
         detections = []
         raw_predictions = []
 
-        for orig_boxes, orig_object_labels, object_scores, verb_scores, ttcs in zip(pred_boxes, pred_object_labels, pred_object_scores, pred_verbs, pred_ttcs):
-            if verb_scores.shape[0]>0:
+        for orig_boxes, orig_object_labels, object_scores, verb_scores, ttcs in zip(
+            pred_boxes, pred_object_labels, pred_object_scores, pred_verbs, pred_ttcs
+        ):
+            if verb_scores.shape[0] > 0:
                 verb_predictions = verb_scores.argmax(-1)
 
                 dets = {
@@ -262,24 +255,26 @@ class ShortTermAnticipationSlowFast(SlowFast):
                     "nouns": orig_object_labels,
                     "verbs": verb_predictions.cpu().numpy(),
                     "ttcs": ttcs.cpu().numpy(),
-                    "scores": object_scores
+                    "scores": object_scores,
                 }
             else:
                 dets = {
-                    "boxes": np.zeros((0,4)),
+                    "boxes": np.zeros((0, 4)),
                     "nouns": np.array([]),
                     "verbs": np.array([]),
                     "ttcs": np.array([]),
-                    "scores": np.array([])
+                    "scores": np.array([]),
                 }
 
-            raw_predictions.append({
-                "boxes": orig_boxes,
-                "object_labels": orig_object_labels,
-                "object_scores": object_scores,
-                "verb_scores": verb_scores.cpu().numpy(),
-                "ttcs": ttcs.cpu().numpy()
-            })
+            raw_predictions.append(
+                {
+                    "boxes": orig_boxes,
+                    "object_labels": orig_object_labels,
+                    "object_scores": object_scores,
+                    "verb_scores": verb_scores.cpu().numpy(),
+                    "ttcs": ttcs.cpu().numpy(),
+                }
+            )
 
             detections.append(dets)
 
@@ -289,6 +284,10 @@ class ShortTermAnticipationSlowFast(SlowFast):
         """Expects videos to be a batch of input tensors and bboxes
         to be a list associated bounding boxes"""
         packed_bboxes = self.pack_boxes(bboxes)
+
+        # print(packed_bboxes)
+        # print(pred_object_scores)
+        # raise ValueError(1)
 
         features = self.extract_features(videos)
 

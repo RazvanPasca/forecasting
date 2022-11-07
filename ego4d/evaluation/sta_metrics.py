@@ -1,7 +1,8 @@
 import numpy as np
 from abc import ABC, abstractmethod
 
-def compute_iou(preds,gts):
+
+def compute_iou(preds, gts):
     """
     Compute a matrix of intersection over union values for two lists of bounding boxes using broadcasting
     :param preds: matrix of predicted bounding boxes [NP x 4]
@@ -11,14 +12,14 @@ def compute_iou(preds,gts):
     # Convert shapes to use broadcasting
     # preds: NP x 4 -> NP x 1 x 4
     # gts: NG x 4 -> 1 x NG x 4
-    preds = np.expand_dims(preds,1)
-    gts = np.expand_dims(gts,0)
+    preds = np.expand_dims(preds, 1)
+    gts = np.expand_dims(gts, 0)
 
     def area(boxes):
         width = boxes[..., 2] - boxes[..., 0] + 1
         height = boxes[..., 3] - boxes[..., 1] + 1
-        width[width<0]=0
-        height[height<0]=0
+        width[width < 0] = 0
+        height[height < 0] = 0
         return width * height
 
     ixmin = np.maximum(gts[..., 0], preds[..., 0])
@@ -30,11 +31,14 @@ def compute_iou(preds,gts):
     areas_gts = area(gts)
     areas_intersections = area(np.stack([ixmin, iymin, ixmax, iymax], -1))
 
-    return (areas_intersections) / (areas_preds + areas_gts - areas_intersections+1e-11)
+    return (areas_intersections) / (areas_preds + areas_gts - areas_intersections + 1e-11)
+
+
 class AbstractMeanAveragePrecision(ABC):
     """
     Abstract class for implementing mAP measures
     """
+
     def __init__(self, num_aps, percentages=True, count_all_classes=True, top_k=None):
         """
         Contruct the Mean Average Precision metric
@@ -66,10 +70,7 @@ class AbstractMeanAveragePrecision(ABC):
     def get_short_names(self):
         return self.short_names
 
-    def add(self,
-            preds,
-            labels
-            ):
+    def add(self, preds, labels):
         """
         Add predictions and labels of a single image and matches predictions to ground truth boxes
         :param predictions: dictionary of predictions following the format below. While "boxes" and "scores" are
@@ -121,8 +122,8 @@ class AbstractMeanAveragePrecision(ABC):
         matched = []
 
         if len(preds) > 0:
-            predicted_boxes = preds['boxes']
-            predicted_scores = preds['scores']
+            predicted_boxes = preds["boxes"]
+            predicted_scores = preds["scores"]
             predicted_classes = self._map_classes(preds)
 
             # Keep track of correctly matched boxes for the different AP metrics
@@ -130,7 +131,7 @@ class AbstractMeanAveragePrecision(ABC):
 
             if len(labels) > 0:
                 # get GT boxes
-                gt_boxes = labels['boxes']
+                gt_boxes = labels["boxes"]
 
                 # IOU between all predictions and gt boxes
                 ious = compute_iou(predicted_boxes, gt_boxes)
@@ -174,9 +175,9 @@ class AbstractMeanAveragePrecision(ABC):
                     matched.append(jj_matched)
 
                 # remove the K highest score false positives
-                if self.K is not None and self.K>1:
+                if self.K is not None and self.K > 1:
                     # number of FP to remove:
-                    K = (self.K - 1) * len(labels['boxes'])
+                    K = (self.K - 1) * len(labels["boxes"])
                     # indexes to sort the predictions
                     order = predicted_scores.argsort()[::-1]
                     # sort the true positives labels
@@ -210,7 +211,7 @@ class AbstractMeanAveragePrecision(ABC):
         :param preds: the predictions
         :return: num_ap x len(pred) array specifying the class of each prediction according to the different AP measures
         """
-        return np.vstack([preds['nouns']] * self.num_aps).T
+        return np.vstack([preds["nouns"]] * self.num_aps).T
 
     def _compute_prec_rec(self, true_positives, confidence_scores, num_gt):
         """
@@ -293,7 +294,13 @@ class AbstractMeanAveragePrecision(ABC):
         """
         return np.max(rec)
 
-    def evaluate(self, measure='AP'):
+    def reset(self):
+        self.true_positives = []
+        self.confidence_scores = []
+        self.predicted_classes = []
+        self.gt_classes = []
+
+    def evaluate(self, measure="AP"):
         """
         Compute AP/MR for all classes, then averages
         """
@@ -335,9 +342,9 @@ class AbstractMeanAveragePrecision(ABC):
                 # if both TP and GT are non empty, then compute AP
                 if len(tp) > 0 and ngt > 0:
                     prec, rec = self._compute_prec_rec(tp, cs, ngt)
-                    if measure=='AP':
+                    if measure == "AP":
                         this_measure = self._compute_ap(prec, rec)
-                    elif measure=='MR': #maximum recall
+                    elif measure == "MR":  # maximum recall
                         this_measure = self._compute_mr(prec, rec)
                     # turn into percentage
                     if self.percentages:
@@ -367,8 +374,9 @@ class AbstractMeanAveragePrecision(ABC):
         :return: a num_preds x num_ap matrix specifying possible matchings depending on the prediction and metric
         """
 
+
 class ObjectOnlyMeanAveragePrecision(AbstractMeanAveragePrecision):
-    def __init__(self, iou_threshold=0.5, top_k=3, count_all_classes=False):
+    def __init__(self, iou_threshold=0.5, top_k=5, count_all_classes=False):
         """
         Construct the object only mAP metric. This will compute the following metrics:
             - Box + Noun
@@ -389,13 +397,10 @@ class ObjectOnlyMeanAveragePrecision(AbstractMeanAveragePrecision):
         :param preds: the input predictions
         :return the matrix of classess associated to each prediction according to the evaluation measure
         """
-        nouns = preds['nouns']
-        boxes = np.ones(len(preds['nouns']))
+        nouns = preds["nouns"]
+        boxes = np.ones(len(preds["nouns"]))
 
-        return np.vstack([
-            nouns,  # box + noun, average over nouns
-            boxes]  # box, just compute a single AP
-        ).T
+        return np.vstack([nouns, boxes]).T  # box + noun, average over nouns  # box, just compute a single AP
 
     def _match(self, pred, gt_predictions, ious):
         """
@@ -405,16 +410,18 @@ class ObjectOnlyMeanAveragePrecision(AbstractMeanAveragePrecision):
         :param ious: the computed IOU matrix (NGT x NPRED)
         :return: a num_preds x num_ap matrix specifying possible matchings depending on the prediction and metric
         """
-        nouns = (pred['nouns'] == gt_predictions['nouns'])
-        boxes = (ious.ravel() > self.iou_threshold)
+        nouns = pred["nouns"] == gt_predictions["nouns"]
+        boxes = ious.ravel() > self.iou_threshold
 
         map_box_noun = boxes & nouns
         map_box = boxes
 
         return np.vstack([map_box_noun, map_box]).T
 
+
 class OverallMeanAveragePrecision(AbstractMeanAveragePrecision):
     """Compute the different STA metrics based on mAP"""
+
     def __init__(self, iou_threshold=0.5, ttc_threshold=0.25, top_k=5, count_all_classes=False):
         """
         Construct the overall mAP metric. This will compute the following metrics:
@@ -436,31 +443,35 @@ class OverallMeanAveragePrecision(AbstractMeanAveragePrecision):
         self.iou_threshold = iou_threshold
         self.tti_threshold = ttc_threshold
 
-        self.names = ['Box AP',
-                      'Box + Noun AP',
-                      'Box + Verb AP',
-                      'Box + TTC AP',
-                      'Box + Noun + Verb AP',
-                      'Box + Noun + TTC AP',
-                      'Box + Verb + TTC AP',
-                      'Box + Noun + Verb + TTC AP',
-                      'Box + Noun mAP',
-                      'Box + Noun + Verb mAP',
-                      'Box + Noun + TTC mAP',
-                      'Box + Noun + Verb + TTC mAP']
+        self.names = [
+            "Box AP",
+            "Box + Noun AP",
+            "Box + Verb AP",
+            "Box + TTC AP",
+            "Box + Noun + Verb AP",
+            "Box + Noun + TTC AP",
+            "Box + Verb + TTC AP",
+            "Box + Noun + Verb + TTC AP",
+            "Box + Noun mAP",
+            "Box + Noun + Verb mAP",
+            "Box + Noun + TTC mAP",
+            "Box + Noun + Verb + TTC mAP",
+        ]
 
-        self.short_names = ['ap_box',
-                      'ap_box_noun',
-                      'ap_box_verb',
-                      'ap_box_ttc',
-                      'ap_box_noun_verb',
-                      'ap_box_noun_ttc',
-                      'ap_box_verb_ttc',
-                      'ap_box_noun_verb_ttc',
-                      'map_box_noun',
-                      'map_box_noun_verb',
-                      'map_box_noun_ttc',
-                      'map_box_noun_verb_ttc']
+        self.short_names = [
+            "ap_box",
+            "ap_box_noun",
+            "ap_box_verb",
+            "ap_box_ttc",
+            "ap_box_noun_verb",
+            "ap_box_noun_ttc",
+            "ap_box_verb_ttc",
+            "ap_box_noun_verb_ttc",
+            "map_box_noun",
+            "map_box_noun_verb",
+            "map_box_noun_ttc",
+            "map_box_noun_verb_ttc",
+        ]
 
     def _map_classes(self, preds):
         """
@@ -468,23 +479,25 @@ class OverallMeanAveragePrecision(AbstractMeanAveragePrecision):
         :param preds: the input predictions
         :return the matrix of classess associated to each prediction according to the evaluation measure
         """
-        nouns = preds['nouns']
-        ones = np.ones(len(preds['nouns']))
+        nouns = preds["nouns"]
+        ones = np.ones(len(preds["nouns"]))
 
-        return np.vstack([
-            ones, # ap_box - do not average
-            ones, # ap_box_noun - do not average
-            ones, # ap_box_verb - do not average
-            ones, # ap_box_ttc - do not average
-            ones, # ap_box_noun_verb - do not average
-            ones, # ap_box_noun_ttc - do not average
-            ones, # ap_box_verb_ttc - do not average
-            ones, # ap_box_noun_verb_ttc - do not average
-            nouns, # map_box_noun - average over nouns
-            nouns, # map_box_noun_verb - average over nouns
-            nouns, # map_box_noun_ttc - average over nouns
-            nouns # map_box_noun_verb_ttc - average over nouns
-        ]).T
+        return np.vstack(
+            [
+                ones,  # ap_box - do not average
+                ones,  # ap_box_noun - do not average
+                ones,  # ap_box_verb - do not average
+                ones,  # ap_box_ttc - do not average
+                ones,  # ap_box_noun_verb - do not average
+                ones,  # ap_box_noun_ttc - do not average
+                ones,  # ap_box_verb_ttc - do not average
+                ones,  # ap_box_noun_verb_ttc - do not average
+                nouns,  # map_box_noun - average over nouns
+                nouns,  # map_box_noun_verb - average over nouns
+                nouns,  # map_box_noun_ttc - average over nouns
+                nouns,  # map_box_noun_verb_ttc - average over nouns
+            ]
+        ).T
 
     def _match(self, pred, gt_predictions, ious):
         """
@@ -494,10 +507,10 @@ class OverallMeanAveragePrecision(AbstractMeanAveragePrecision):
         :param ious: the computed IOU matrix (NGT x NPRED)
         :return: a num_preds x num_ap matrix specifying possible matchings depending on the prediction and metric
         """
-        nouns = (pred['nouns'] == gt_predictions['nouns'])
-        boxes = (ious.ravel() > self.iou_threshold)
-        verbs = (pred['verbs'] == gt_predictions['verbs'])
-        ttcs = (np.abs(pred['ttcs'] - gt_predictions['ttcs']) <= self.tti_threshold)
+        nouns = pred["nouns"] == gt_predictions["nouns"]
+        boxes = ious.ravel() > self.iou_threshold
+        verbs = pred["verbs"] == gt_predictions["verbs"]
+        ttcs = np.abs(pred["ttcs"] - gt_predictions["ttcs"]) <= self.tti_threshold
 
         tp_box = boxes
         tp_box_noun = boxes & nouns
@@ -508,22 +521,27 @@ class OverallMeanAveragePrecision(AbstractMeanAveragePrecision):
         tp_box_verb_ttc = boxes & verbs & ttcs
         tp_box_noun_verb_ttc = boxes & verbs & nouns & ttcs
 
-        return np.vstack([tp_box,  # ap_box
-                          tp_box_noun,  # ap_box_noun
-                          tp_box_verb,  # ap_box_verb
-                          tp_box_ttc,  # ap_box_ttc
-                          tp_box_noun_verb,  # ap_box_noun_verb
-                          tp_box_noun_ttc,  # ap_box_noun_ttc
-                          tp_box_verb_ttc,  # ap_box_verb_ttc
-                          tp_box_noun_verb_ttc,  # ap_box_noun_verb_ttc
-                          tp_box_noun,  # map_box_noun
-                          tp_box_noun_verb,  # map_box_noun_verb
-                          tp_box_noun_ttc,  # map_box_noun_ttc
-                          tp_box_noun_verb_ttc  # map_box_noun_verb_ttc
-                          ]).T
+        return np.vstack(
+            [
+                tp_box,  # ap_box
+                tp_box_noun,  # ap_box_noun
+                tp_box_verb,  # ap_box_verb
+                tp_box_ttc,  # ap_box_ttc
+                tp_box_noun_verb,  # ap_box_noun_verb
+                tp_box_noun_ttc,  # ap_box_noun_ttc
+                tp_box_verb_ttc,  # ap_box_verb_ttc
+                tp_box_noun_verb_ttc,  # ap_box_noun_verb_ttc
+                tp_box_noun,  # map_box_noun
+                tp_box_noun_verb,  # map_box_noun_verb
+                tp_box_noun_ttc,  # map_box_noun_ttc
+                tp_box_noun_verb_ttc,  # map_box_noun_verb_ttc
+            ]
+        ).T
+
 
 class STAMeanAveragePrecision(AbstractMeanAveragePrecision):
     """Compute the different STA metrics based on mAP"""
+
     def __init__(self, iou_threshold=0.5, ttc_threshold=0.25, top_k=5, count_all_classes=False):
         """
         Construct the overall mAP metric. This will compute the following metrics:
@@ -536,19 +554,19 @@ class STAMeanAveragePrecision(AbstractMeanAveragePrecision):
         :param top_k: Top-K criterion for mAP. Discounts up to k-1 high scoring false positives
         :param count_all_classes: whether to also average across classes with no annotations. False is the default for many implementations.
         """
-        super().__init__(4, top_k=top_k, count_all_classes=count_all_classes)
+        super().__init__(5, top_k=top_k, count_all_classes=count_all_classes)
         self.iou_threshold = iou_threshold
         self.tti_threshold = ttc_threshold
 
-        self.names = ['Box + Noun mAP',
-                      'Box + Noun + Verb mAP',
-                      'Box + Noun + TTC mAP',
-                      'Box + Noun + Verb + TTC mAP']
+        self.names = [
+            "Box + Noun mAP",
+            "Box + Noun + Verb mAP",
+            "Box + Noun + TTC mAP",
+            "Box + Noun + Verb + TTC mAP",
+            "Box mAP",
+        ]
 
-        self.short_names = ['map_box_noun',
-                            'map_box_noun_verb',
-                            'map_box_noun_ttc',
-                            'map_box_noun_verb_ttc']
+        self.short_names = ["map_box_noun", "map_box_noun_verb", "map_box_noun_ttc", "map_box_noun_verb_ttc", "box_map"]
 
     def _map_classes(self, preds):
         """
@@ -556,14 +574,17 @@ class STAMeanAveragePrecision(AbstractMeanAveragePrecision):
         :param preds: the input predictions
         :return the matrix of classess associated to each prediction according to the evaluation measure
         """
-        nouns = preds['nouns']
+        nouns = preds["nouns"]
 
-        return np.vstack([
-            nouns, # map_box_noun - average over nouns
-            nouns, # map_box_noun_verb - average over nouns
-            nouns, # map_box_noun_ttc - average over nouns
-            nouns # map_box_noun_verb_ttc - average over nouns
-        ]).T
+        return np.vstack(
+            [
+                nouns,  # map_box_noun - average over nouns
+                nouns,  # map_box_noun_verb - average over nouns
+                nouns,  # map_box_noun_ttc - average over nouns
+                nouns,  # map_box_noun_verb_ttc - average over nouns
+                nouns,
+            ]
+        ).T
 
     def _match(self, pred, gt_predictions, ious):
         """
@@ -573,18 +594,85 @@ class STAMeanAveragePrecision(AbstractMeanAveragePrecision):
         :param ious: the computed IOU matrix (NGT x NPRED)
         :return: a num_preds x num_ap matrix specifying possible matchings depending on the prediction and metric
         """
-        nouns = (pred['nouns'] == gt_predictions['nouns'])
-        boxes = (ious.ravel() > self.iou_threshold)
-        verbs = (pred['verbs'] == gt_predictions['verbs'])
-        ttcs = (np.abs(pred['ttcs'] - gt_predictions['ttcs']) <= self.tti_threshold)
+        nouns = pred["nouns"] == gt_predictions["nouns"]
+        boxes = ious.ravel() > self.iou_threshold
+        verbs = pred["verbs"] == gt_predictions["verbs"]
+        ttcs = np.abs(pred["ttcs"] - gt_predictions["ttcs"]) <= self.tti_threshold
 
         tp_box_noun = boxes & nouns
         tp_box_noun_verb = boxes & verbs & nouns
         tp_box_noun_ttc = boxes & nouns & ttcs
         tp_box_noun_verb_ttc = boxes & verbs & nouns & ttcs
+        tp_box = boxes
 
-        return np.vstack([tp_box_noun,  # map_box_noun
-                          tp_box_noun_verb,  # map_box_noun_verb
-                          tp_box_noun_ttc,  # map_box_noun_ttc
-                          tp_box_noun_verb_ttc  # map_box_noun_verb_ttc
-                          ]).T
+        return np.vstack(
+            [
+                tp_box_noun,  # map_box_noun
+                tp_box_noun_verb,  # map_box_noun_verb
+                tp_box_noun_ttc,  # map_box_noun_ttc
+                tp_box_noun_verb_ttc,  # map_box_noun_verb_ttc
+                tp_box,  # map_box
+            ]
+        ).T
+
+
+class NounVerbMeanAveragePrecision(AbstractMeanAveragePrecision):
+    """Compute the different STA metrics based on mAP"""
+
+    def __init__(self, iou_threshold=0.5, ttc_threshold=0.25, top_k=5, count_all_classes=False):
+        """
+        Construct the overall mAP metric. This will compute the following metrics:
+            - Box mAP
+            - Box + Noun mAP
+            - Box + Noun + Verb mAP
+        :param iou_threshold: IOU threshold to check if a predicted box can be matched to a ground turth box
+        :param ttc_threshold: TTC threshold to check if a predicted TTC is acceptable
+        :param top_k: Top-K criterion for mAP. Discounts up to k-1 high scoring false positives
+        :param count_all_classes: whether to also average across classes with no annotations. False is the default for many implementations.
+        """
+        super().__init__(3, top_k=top_k, count_all_classes=count_all_classes)
+        self.iou_threshold = iou_threshold
+        self.tti_threshold = ttc_threshold
+
+        self.names = ["Box mAP", "Box + Noun mAP", "Box + Noun + Verb mAP"]
+        self.short_names = ["map_box", "map_box_noun", "map_box_noun_verb"]
+
+    def _map_classes(self, preds):
+        """
+        Associates each prediction to a class
+        :param preds: the input predictions
+        :return the matrix of classess associated to each prediction according to the evaluation measure
+        """
+        boxes = np.ones(len(preds["nouns"]))
+        nouns = preds["nouns"]
+
+        return np.vstack(
+            [
+                boxes,
+                nouns,  # map_box_noun - average over nouns
+                nouns,  # map_box_noun_verb - average over nouns
+            ]
+        ).T
+
+    def _match(self, pred, gt_predictions, ious):
+        """
+        Return matches of a given prediction to a set of GT predictions
+        :param pred: the prediction dictionary
+        :param gt_predictions: the gt predictions dictionary
+        :param ious: the computed IOU matrix (NGT x NPRED)
+        :return: a num_preds x num_ap matrix specifying possible matchings depending on the prediction and metric
+        """
+        nouns = pred["nouns"] == gt_predictions["nouns"]
+        boxes = ious.ravel() > self.iou_threshold
+        verbs = pred["verbs"] == gt_predictions["verbs"]
+
+        tp_box_noun = boxes & nouns
+        tp_box_noun_verb = boxes & verbs & nouns
+
+        return np.vstack(
+            [
+                boxes,
+                tp_box_noun,  # map_box_noun
+                tp_box_noun_verb,  # map_box_noun_verb
+            ]
+        ).T
