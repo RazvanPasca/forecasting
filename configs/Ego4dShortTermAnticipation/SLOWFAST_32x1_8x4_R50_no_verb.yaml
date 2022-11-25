@@ -1,9 +1,13 @@
 TRAIN:
-  ENABLE: True
+  ENABLE: False
   DATASET: Ego4dShortTermAnticipation
-  BATCH_SIZE: 8
-CHECKPOINT_FILE_PATH: /local/home/rpasca/Thesis/Ego4d_all/forecast/pretrained_models/SLOWFAST_8x8_R50.pkl
-CHECKPOINT_VERSION: caffe2
+  BATCH_SIZE: 4
+# CHECKPOINT_FILE_PATH: /local/home/rpasca/Thesis/Ego4d_all/forecast/pretrained_models/SLOWFAST_8x8_R50.pkl
+CHECKPOINT_FILE_PATH: /local/home/rpasca/Thesis/Ego4d_all/forecast/ego4d_baselines/sta_models/slowfast_model.ckpt
+# CHECKPOINT_FILE_PATH: /local/home/rpasca/Thesis/hearty_morning_alexey_obj_detections/11-09_02:15/epoch=0-val_loss=0.00-val/ttc_error=0.56.ckpt
+CHECKPOINT_LOAD_MODEL_HEAD: True
+CHECKPOINT_VERSION: pt
+# CHECKPOINT_VERSION: caffe2
 DATA:
   NUM_FRAMES: 32
   SAMPLING_RATE: 1
@@ -41,11 +45,11 @@ BN:
   MOMENTUM: 0.1
   WEIGHT_DECAY: 0.0
 SOLVER:
-  BASE_LR: 0.001
-  LR_POLICY: cosine
+  BASE_LR: 0.0004
+  LR_POLICY: constant
   MAX_EPOCH: 50
   MOMENTUM: 0.9
-  OPTIMIZING_METHOD: sgd
+  OPTIMIZING_METHOD: adam
   WEIGHT_DECAY: 1e-4
 MODEL:
   NUM_VERBS: 74
@@ -54,19 +58,18 @@ MODEL:
   MODEL_NAME: ShortTermAnticipationSlowFast
   VERB_LOSS_FUNC: cross_entropy
   TTC_LOSS_FUNC: smooth_l1
-  STA_LOSS_WEIGHTS: [0, 10] #verb, TTC
+  STA_LOSS_WEIGHTS: [.2, 10] #verb, TTC
   DROPOUT_RATE: 0.8
   HEAD_VERB_ACT: softmax
   HEAD_TTC_ACT: softplus
 TEST:
-  ENABLE: False
+  ENABLE: True
   DATASET: Ego4dShortTermAnticipation
-  BATCH_SIZE: 64
+  BATCH_SIZE: 1
 DATA_LOADER:
   NUM_WORKERS: 6
   PIN_MEMORY: True
 NUM_GPUS: 1
-# GPUS: [6]
-NUM_SHARDS: 1
+NUM_SHARDS: 0
 RNG_SEED: 0
 OUTPUT_DIR: .

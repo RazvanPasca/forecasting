@@ -3,12 +3,12 @@ import itertools
 import numpy as np
 import torch
 from fvcore.nn.precise_bn import get_bn_modules
-import ego4d.utils.distributed as du
-import ego4d.utils.logging as logging
-import ego4d.utils.misc as misc
-import ego4d.models.losses as losses
-from ego4d.tasks.video_task import VideoTask
-from ego4d.evaluation.sta_metrics import STAMeanAveragePrecision
+import Ego4d_all.forecast.ego4d.utils.distributed as du
+import Ego4d_all.forecast.ego4d.utils.logging as logging
+import Ego4d_all.forecast.ego4d.utils.misc as misc
+import Ego4d_all.forecast.ego4d.models.losses as losses
+from Ego4d_all.forecast.ego4d.tasks.video_task import VideoTask
+from Ego4d_all.forecast.ego4d.evaluation.sta_metrics import STAMeanAveragePrecision
 import itertools
 import json
 
@@ -129,13 +129,36 @@ class ShortTermAnticipationTask(VideoTask):
         for p, g in zip(data['pred_detections'], data['gt_detections']):
             map.add(p, g)
 
+        if self.global_rank == 0:
+            res = {
+                'version': '1.0',
+                'challenge': 'ego4d_short_term_object_interaction_anticipation',
+                'results': {
+                    uid : [
+                            {
+                                'box': [float(h) for h in z[0]], 
+                                'noun_category_id': int(z[1]), 
+                                'verb_category_id': int(z[2]), 
+                                'time_to_contact': float(z[3]), 
+                                'score': float(z[4])
+                            } for z in zip(x['boxes'], x['nouns'], x['verbs'], x['ttcs'], x['scores'])
+                        ] for uid, x in zip(data['uids'], data['pred_detections'])
+                    }
+            }
+            with open(f"{self.cfg.RESULTS_JSON.split('.')[0]}/val_preds_{self.current_epoch}.json", 'w') as f:
+                json.dump(res, f)
+
         vals = map.evaluate()
         names = map.get_short_names()
 
         for name, val in zip(names, vals):
             self.log(f"val/{name}", val)
+            print(f"val/{name}", val)
+            with open(f"{self.cfg.RESULTS_JSON.split('.')[0]}/val_logs_{self.current_epoch}.txt", 'a') as fp:
+                fp.write(f"val/{name}:{val}\n")
 
         self.log('val/map_box_noun_verb_ttc_err', 100-vals[-1])
+        print('val/map_box_noun_verb_ttc_err', 100-vals[-1])
 
         pred_verb = np.concatenate(data['verb_scores'] , axis=0)
         pred_ttc = np.concatenate(data['ttcs'], axis=0)
@@ -160,7 +183,11 @@ class ShortTermAnticipationTask(VideoTask):
         ttc_error = np.abs(pred_ttc - ttc_targets).mean()
 
         self.log('val/ttc_error', ttc_error)
+        print('val/ttc_error', ttc_error)
         self.log('val/verb_accuracy', cls_accuracy)
+
+        with open(f"{self.cfg.RESULTS_JSON.split('.')[0]}/val_logs_{self.current_epoch}.txt", 'a') as fp:
+            fp.write(f"val/ttc_error:{ttc_error}\n")
 
 
     def test_step(self, batch, batch_idx):
@@ -204,7 +231,7 @@ class ShortTermAnticipationTask(VideoTask):
                         ] for uid, x in zip(data['uids'], data['pred_detections'])
                     }
             }
-            with open(self.cfg.RESULTS_JSON, 'w') as f:
+            with open(f"{self.cfg.RESULTS_JSON.split('.')[0]}/test_preds.json", 'w') as f:
                 json.dump(res, f)
 
 

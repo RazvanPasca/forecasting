@@ -46,6 +46,8 @@ def parse_args():
         nargs=argparse.REMAINDER,
     )
     parser.add_argument("--gpu", help="specify gpu choice", type=int, default=6)
+    parser.add_argument("--run_val", help="run 2nd stage using validation data", type=bool, default=False)
+    parser.add_argument("--obj_detections", help="json with object detections", type=str, default="")
     if len(sys.argv) == 1:
         parser.print_help()
     return parser.parse_args()

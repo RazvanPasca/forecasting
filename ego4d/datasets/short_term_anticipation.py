@@ -39,6 +39,14 @@ import av
 import numpy as np
 
 
+MISSING_KEYS = {'b29fc28f-d093-47a3-a9d8-0d1b466c0433_0003261', 
+'77ed1624-f87b-4196-9a0a-95b7023b18e4_0000220', 
+'d18ef16d-f803-4387-bb5e-7876f1522a63_0023520', 
+'002d2729-df71-438d-8396-5895b349e8fd_0022531', 
+'77ed1624-f87b-4196-9a0a-95b7023b18e4_0000190',
+'77ed1624-f87b-4196-9a0a-95b7023b18e4_0000205', 
+'d18ef16d-f803-4387-bb5e-7876f1522a63_0023565'}
+
 def pts_difference_per_frame(fps: Fraction, time_base: Fraction) -> int:
     r"""
     utility method to determine the difference between two consecutive video
@@ -363,6 +371,15 @@ class Ego4dShortTermAnticipation(torch.utils.data.Dataset):
             self._annotations = self._load_lists(cfg.EGO4D_STA.VAL_LISTS)
         else:
             self._annotations = self._load_lists(cfg.EGO4D_STA.TEST_LISTS)
+            
+        to_del = []
+        for i, annot in enumerate(self._annotations["annotations"]):
+            if annot["uid"] in MISSING_KEYS:
+                to_del.append(i)
+        
+        for idx in sorted(to_del, reverse=True):
+            print(f"Deleting {self._annotations['annotations'][idx]}")
+            del self._annotations["annotations"][idx]
 
     def __len__(self):
         return len(self._annotations["annotations"])

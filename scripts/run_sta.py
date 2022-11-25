@@ -13,6 +13,8 @@ from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from Ego4d_all.forecast.scripts.slurm import copy_and_run_with_config
 from pytorch_lightning.plugins import DDPPlugin
 
+import json
+import datetime
 
 logger = logging.get_logger(__name__)
 
@@ -32,6 +34,7 @@ def main(cfg):
 
     # Load model from checkpoint if checkpoint file path is given.
     ckp_path = cfg.CHECKPOINT_FILE_PATH
+    cfg.DATA.CHECKPOINT_MODULE_FILE_PATH = ""
     if len(ckp_path) > 0:
         if cfg.CHECKPOINT_VERSION == "caffe2":
             with open(ckp_path, "rb") as f:
@@ -61,7 +64,6 @@ def main(cfg):
 
             state_dict = {remove_first_module(k): v for k, v in ckpt["state_dict"].items() if "head" not in k}
             missing_keys, unexpected_keys = task.model.backbone.load_state_dict(state_dict, strict=False)
-
             # Ensure only head key is missing.
             assert len(unexpected_keys) == 0
             assert all(["head" in x for x in missing_keys])
@@ -73,6 +75,9 @@ def main(cfg):
                 child_name: child_state_dict.state_dict()
                 for child_name, child_state_dict in pretrained.model.named_children()
             }
+            print("-----------------------------------------------------")
+            print(f"LOADING FROM {ckp_path}")
+            print("-----------------------------------------------------")
             for child_name, child_module in task.model.named_children():
                 if not cfg.CHECKPOINT_LOAD_MODEL_HEAD and "head" in child_name:
                     continue
@@ -80,27 +85,38 @@ def main(cfg):
                 state_dict = state_dict_for_child_module[child_name]
                 child_module.load_state_dict(state_dict)
 
-    checkpoint_callback = ModelCheckpoint(monitor=task.checkpoint_metric, mode="min", save_last=True, save_top_k=1)
+    checkpoint_callback = ModelCheckpoint(monitor="val/ttc_error", mode="min", save_last=True,
+                        dirpath=cfg.RESULTS_JSON,
+                        filename='{epoch}-{val_loss:.2f}-{val/ttc_error:.2f}',
+                        save_top_k=1)
+    
+    
     if cfg.ENABLE_LOGGING:
         args = {"callbacks": [LearningRateMonitor(), checkpoint_callback]}
     else:
         args = {"logger": False, "callbacks": checkpoint_callback}
+
+    torch.set_num_threads(7)
 
     trainer = Trainer(
         gpus=[gpu],
         num_nodes=cfg.NUM_SHARDS,
         accelerator=cfg.SOLVER.ACCELERATOR,
         max_epochs=cfg.SOLVER.MAX_EPOCH,
-        num_sanity_val_steps=3,
+        num_sanity_val_steps=3 if not run_validation_sanity_check else -1,
         benchmark=True,
         log_gpu_memory="min_max",
         replace_sampler_ddp=False,
         fast_dev_run=False,
         default_root_dir=cfg.OUTPUT_DIR,
         plugins=DDPPlugin(find_unused_parameters=False),
-        auto_select_gpus=True,
+        auto_select_gpus=False,
         **args,
     )
+
+    print("---------------------------------------------------")
+    print(f"Results will be saved to {cfg.RESULTS_JSON}")
+    print("---------------------------------------------------")
 
     if cfg.TRAIN.ENABLE and cfg.TEST.ENABLE:
         trainer.fit(task)
@@ -116,17 +132,66 @@ def main(cfg):
         return trainer.test(task)
 
 
+def get_only_bboxes_obj_detections_path(obj_detection_for_2stage):
+    # with open(orig_detections_p, "r") as fp:
+    #     orig_dets = json.loads(fp.read())
+
+    with open(obj_detection_for_2stage, "r") as fp:
+        obj_dets = json.loads(fp.read())
+
+    # orig_keys = set(orig_dets.keys())
+    # our_keys = set(obj_dets["results"].keys())
+
+    # print (f"Missing keys:{len(orig_keys-our_keys)}")
+    # if len(orig_keys-our_keys) < 20:
+    #     print(orig_keys-our_keys)
+
+    file_name = f'{obj_detection_for_2stage.split(".")[0]}_obj_detections.json'
+    print(f"Saving bboxes file for 2 stage to {file_name}")
+    with open(file_name, "w") as output:
+        json.dump(obj_dets["results"], output, indent=3)
+
+    return file_name
+
 if __name__ == "__main__":
     args = parse_args()
     args.cfg_file = "/local/home/rpasca/Thesis/Ego4d_all/forecast/configs/Ego4dShortTermAnticipation/SLOWFAST_32x1_8x4_R50_no_verb.yaml"
 
+    run_validation_sanity_check = args.run_val
+
     gpu = args.gpu
+    # gpu = 1
+    print(f"{gpu=}")
     del args.gpu
 
     cfg = load_config(args)
-    cfg.EGO4D_STA.OBJ_DETECTIONS = (
-        "/local/home/rpasca/Thesis/Ego4d_all/forecast/short_term_anticipation/object_detections.json"
-    )
+    # obj_detections_path = "/local/home/rpasca/Thesis/pred_jsons/corect_true_feather_preds_obj_detections.json"
+    # obj_detections_path = "/local/home/rpasca/Thesis/pred_jsons/breezy_sound_2463_test_obj_detections.json"
+    # obj_detections_path = "/local/home/rpasca/Thesis/pred_jsons/r_donkey_2603_sharedW_test_obj_detections.json"
+    # obj_detections_path = args.obj_detections
+    obj_detections_path = "/local/home/rpasca/Thesis/pred_jsons/breezy_sound_2463_test_preds.json"
+    
+    obj_detections_path = get_only_bboxes_obj_detections_path(obj_detections_path)
+    
+    e = datetime.datetime.now()
+
+    if run_validation_sanity_check:
+        cfg.TRAIN.ENABLE = True
+        cfg.SOLVER.MAX_EPOCH = 0
+
+    str_time = e.strftime("%m-%d_%H:%M")
+
+    cfg.EGO4D_STA.OBJ_DETECTIONS = obj_detections_path
+    if cfg.TEST.ENABLE and not cfg.TRAIN.ENABLE:
+        cfg.RESULTS_JSON = obj_detections_path.split("/")[-1].split(".")[0]+f"/{str_time}_test_run"
+    else:
+        cfg.RESULTS_JSON = obj_detections_path.split("/")[-1].split(".")[0]+f"/{str_time}_val_run"
+           
+    os.makedirs(cfg.RESULTS_JSON, exist_ok=True)
+    with open(obj_detections_path, "r") as fp:
+        content = json.loads(fp.read())
+    
+   
     cfg.EGO4D_STA.RGB_LMDB_DIR = os.path.expandvars("$DATA/Ego4d/data/lmdb")
     cfg.EGO4D_STA.ANNOTATION_DIR = os.path.expandvars("$DATA/Ego4d/data/annotations")
     print(cfg)
