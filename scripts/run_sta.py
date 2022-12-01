@@ -169,7 +169,7 @@ if __name__ == "__main__":
     # obj_detections_path = "/local/home/rpasca/Thesis/pred_jsons/breezy_sound_2463_test_obj_detections.json"
     # obj_detections_path = "/local/home/rpasca/Thesis/pred_jsons/r_donkey_2603_sharedW_test_obj_detections.json"
     # obj_detections_path = args.obj_detections
-    obj_detections_path = "/local/home/rpasca/Thesis/pred_jsons/breezy_sound_2463_test_preds.json"
+    obj_detections_path = "/local/home/rpasca/Thesis/pred_jsons/good_blaze_test_6.json"
     
     obj_detections_path = get_only_bboxes_obj_detections_path(obj_detections_path)
     
